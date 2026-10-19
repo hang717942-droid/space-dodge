@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>우주 탄막 피하기</title>
+<style>
+:root{--bg:#070914;--panel:#0e1226;--ink:#e9ecff;--dim:#8d94c4;--ship:#ffc247;--accent:#ff5d73;--cool:#5de0ff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#070914;--panel:#0e1226;--ink:#e9ecff;--dim:#8d94c4}}
+:root[data-theme="dark"]{--bg:#070914;--panel:#0e1226;--ink:#e9ecff;--dim:#8d94c4}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Pretendard,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
+#wrap{position:relative;line-height:0}
+canvas{display:block;border-radius:14px;background:#050711;cursor:none;box-shadow:0 0 0 1px #1d2350}
+#ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;line-height:1.5;padding:24px;background:rgba(5,7,17,.72);border-radius:14px}
+#ov.hide{display:none}
+h1{margin:0;font-size:30px;letter-spacing:-.02em}
+p{margin:0;color:var(--dim);font-size:15px;max-width:30ch}
+#res{color:var(--ink);font-size:18px}
+button{font:inherit;font-weight:700;font-size:17px;color:#1b1300;background:var(--ship);border:0;border-radius:10px;padding:12px 34px;cursor:pointer}
+button:focus-visible{outline:3px solid var(--cool);outline-offset:3px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" aria-label="우주 탄막 피하기 게임 화면"></canvas>
+  <div id="ov">
+    <h1 id="t">우주 탄막 피하기</h1>
+    <p id="res"></p>
+    <p id="d">마우스나 손가락으로 전투기를 움직여 총알을 피하세요. 키보드는 방향키·WASD.</p>
+    <button id="b">게임 시작</button>
+  </div>
+</div>
+<script>
+(function(){
+var cv=document.getElementById('c'),ctx=cv.getContext('2d');
+var ov=document.getElementById('ov'),btn=document.getElementById('b'),tt=document.getElementById('t'),res=document.getElementById('res'),ds=document.getElementById('d');
+var W=360,H=600,dpr=1;
+function fit(){
+  W=Math.min(window.innerWidth-16,520);
+  H=Math.min(window.innerHeight-24,820);
+  dpr=window.devicePixelRatio||1;
+  cv.width=W*dpr;cv.height=H*dpr;cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  initStars();
+}
+var stars=[];
+function initStars(){
+  stars=[];
+  for(var i=0;i<90;i++){var z=Math.random();stars.push({x:Math.random()*W,y:Math.random()*H,z:z,s:20+z*90,r:.4+z*1.4});}
+}
+var best=0;
+try{best=parseFloat(localStorage.getItem('spacedodge-best'))||0;}catch(e){}
+var state='ready',t=0,last=0,bullets=[],parts=[],spawnA=0,spawnB=0,spawnC=0;
+var ship={x:0,y:0,tx:0,ty:0};
+var keys={},touch=false;
+
+function reset(){
+  bullets=[];parts=[];t=0;spawnA=0;spawnB=3;spawnC=14;
+  ship.x=ship.tx=W/2;ship.y=ship.ty=H*0.78;
+}
+function start(){
+  reset();state='play';ov.classList.add('hide');last=performance.now();
+}
+function over(){
+  state='over';
+  for(var i=0;i<46;i++){
+    var a=Math.random()*6.28,s=40+Math.random()*220;
+    parts.push({x:ship.x,y:ship.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,l:.9,c:i%2?'#ffc247':'#ff5d73'});
+  }
+  var newBest=t>best;
+  if(newBest){best=t;try{localStorage.setItem('spacedodge-best',String(best));}catch(e){}}
+  setTimeout(function(){
+    tt.textContent='격추됨';
+    res.textContent=t.toFixed(1)+'초 생존'+(newBest?' · 최고 기록!':' · 최고 '+best.toFixed(1)+'초');
+    ds.style.display='none';
+    btn.textContent='다시 시작';
+    ov.classList.remove('hide');btn.focus();
+  },900);
+}
+btn.addEventListener('click',start);
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();keys[k]=true;
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].indexOf(k)>-1)e.preventDefault();
+});
+window.addEventListener('keyup',function(e){keys[e.key.toLowerCase()]=false;});
+function setTarget(e){
+  var r=cv.getBoundingClientRect();
+  touch=e.pointerType==='touch';
+  ship.tx=e.clientX-r.left;
+  ship.ty=e.clientY-r.top-(touch?46:0);
+}
+cv.addEventListener('pointermove',setTarget);
+cv.addEventListener('pointerdown',function(e){setTarget(e);try{cv.setPointerCapture(e.pointerId);}catch(x){}});
+document.addEventListener('visibilitychange',function(){last=performance.now();});
+
+function diff(){return Math.min(1+t/18,5);}
+function addB(x,y,vx,vy,r,c){bullets.push({x:x,y:y,vx:vx,vy:vy,r:r,c:c});}
+function spawn(dt){
+  var d=diff();
+  spawnA-=dt;
+  if(spawnA<=0){
+    spawnA=.55/d;
+    addB(Math.random()*W,-10,(Math.random()-.5)*30,110+d*38,4,'#ff5d73');
+  }
+  spawnB-=dt;
+  if(spawnB<=0){
+    spawnB=Math.max(1.6-d*.22,.45);
+    var side=Math.random()*3|0,x,y;
+    if(side===0){x=Math.random()*W;y=-10;}
+    else if(side===1){x=-10;y=Math.random()*H*.6;}
+    else{x=W+10;y=Math.random()*H*.6;}
+    var a=Math.atan2(ship.y-y,ship.x-x),s=130+d*30;
+    addB(x,y,Math.cos(a)*s,Math.sin(a)*s,5,'#5de0ff');
+  }
+  spawnC-=dt;
+  if(spawnC<=0){
+    spawnC=Math.max(5.5-d*.6,2.6);
+    var cx=W*(.2+Math.random()*.6),n=10+Math.min(d*2|0,8),off=Math.random()*6.28;
+    for(var i=0;i<n;i++){
+      var an=off+i/n*6.28;
+      addB(cx,-6,Math.cos(an)*120,Math.sin(an)*120+40,4,'#ffa24d');
+    }
+  }
+}
+function update(dt){
+  if(state==='play'){
+    t+=dt;
+    var sp=320*dt;
+    if(keys.arrowleft||keys.a)ship.tx-=sp*1.6;
+    if(keys.arrowright||keys.d)ship.tx+=sp*1.6;
+    if(keys.arrowup||keys.w)ship.ty-=sp*1.6;
+    if(keys.arrowdown||keys.s)ship.ty+=sp*1.6;
+    ship.tx=Math.max(14,Math.min(W-14,ship.tx));
+    ship.ty=Math.max(24,Math.min(H-24,ship.ty));
+    var k=1-Math.pow(.0001,dt);
+    ship.x+=(ship.tx-ship.x)*k;ship.y+=(ship.ty-ship.y)*k;
+    spawn(dt);
+    for(var i=bullets.length-1;i>=0;i--){
+      var b=bullets[i];b.x+=b.vx*dt;b.y+=b.vy*dt;
+      if(b.x<-30||b.x>W+30||b.y<-30||b.y>H+30){bullets.splice(i,1);continue;}
+      var dx=b.x-ship.x,dy=b.y-ship.y;
+      if(dx*dx+dy*dy<Math.pow(b.r+7,2)){over();break;}
+    }
+  }
+  for(var j=parts.length-1;j>=0;j--){
+    var p=parts[j];p.x+=p.vx*dt;p.y+=p.vy*dt;p.l-=dt;
+    if(p.l<=0)parts.splice(j,1);
+  }
+  var base=state==='play'?1+diff()*.15:.6;
+  for(var s=0;s<stars.length;s++){
+    var st=stars[s];st.y+=st.s*dt*base;
+    if(st.y>H){st.y=-2;st.x=Math.random()*W;}
+  }
+}
+function drawShip(){
+  var x=ship.x,y=ship.y;
+  ctx.save();ctx.translate(x,y);
+  var fl=8+Math.random()*7;
+  ctx.fillStyle='#5de0ff';
+  ctx.beginPath();ctx.moveTo(-4,10);ctx.lineTo(0,10+fl);ctx.lineTo(4,10);ctx.fill();
+  ctx.fillStyle='#ffc247';
+  ctx.beginPath();
+  ctx.moveTo(0,-20);ctx.lineTo(5,-6);ctx.lineTo(20,8);ctx.lineTo(20,13);
+  ctx.lineTo(6,9);ctx.lineTo(4,15);ctx.lineTo(-4,15);ctx.lineTo(-6,9);
+  ctx.lineTo(-20,13);ctx.lineTo(-20,8);ctx.lineTo(-5,-6);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#16204a';
+  ctx.beginPath();ctx.moveTo(0,-11);ctx.lineTo(3,-2);ctx.lineTo(-3,-2);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(0,0,2.2,0,6.28);ctx.fill();
+  ctx.restore();
+}
+function draw(){
+  ctx.fillStyle='#050711';ctx.fillRect(0,0,W,H);
+  var g=ctx.createRadialGradient(W*.8,H*.15,10,W*.8,H*.15,W*.7);
+  g.addColorStop(0,'rgba(90,60,180,.28)');g.addColorStop(1,'rgba(5,7,17,0)');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  for(var i=0;i<stars.length;i++){
+    var s=stars[i];ctx.fillStyle='rgba(220,230,255,'+(.25+s.z*.7)+')';
+    ctx.fillRect(s.x,s.y,s.r,s.r+s.z*2.5);
+  }
+  for(var j=0;j<bullets.length;j++){
+    var b=bullets[j];
+    ctx.fillStyle=b.c;ctx.globalAlpha=.25;
+    ctx.beginPath();ctx.arc(b.x,b.y,b.r*2.2,0,6.28);ctx.fill();
+    ctx.globalAlpha=1;
+    ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,6.28);ctx.fill();
+  }
+  if(state!=='over')drawShip();
+  for(var k=0;k<parts.length;k++){
+    var p=parts[k];ctx.globalAlpha=Math.max(p.l,0);ctx.fillStyle=p.c;
+    ctx.fillRect(p.x,p.y,3,3);
+  }
+  ctx.globalAlpha=1;
+  ctx.fillStyle='#e9ecff';ctx.font='700 20px sans-serif';ctx.textAlign='left';
+  ctx.fillText(t.toFixed(1)+'초',14,28);
+  ctx.fillStyle='#8d94c4';ctx.font='13px sans-serif';ctx.textAlign='right';
+  ctx.fillText('최고 '+best.toFixed(1)+'초',W-14,26);
+}
+function loop(now){
+  var dt=Math.min((now-last)/1000,.05);last=now;
+  update(dt);draw();
+  requestAnimationFrame(loop);
+}
+fit();reset();
+window.addEventListener('resize',function(){fit();if(state!=='play'){ship.x=ship.tx=W/2;ship.y=ship.ty=H*.78;}});
+last=performance.now();requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
